@@ -1,2 +1,12 @@
+# 爬虫
 requests>=2.28
 pandas>=1.5
+
+# 分析（情绪分类 + 统计/计量）
+jieba>=0.42
+numpy>=1.24
+scikit-learn>=1.2
+statsmodels>=0.14
+linearmodels>=6.0
+matplotlib>=3.7
+seaborn>=0.12
