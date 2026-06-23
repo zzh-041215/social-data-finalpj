@@ -1,22 +1,214 @@
 {
-  "timestamp": "2026-06-23T16:08:21",
+  "timestamp": "2026-06-23T18:00:50",
   "keyword_progress": {
+    "不婚不育": {
+      "last_offset": 200,
+      "done": true
+    },
+    "彩礼": {
+      "last_offset": 200,
+      "done": true
+    },
     "恐婚恐育": {
+      "last_offset": 200,
+      "done": true
+    },
+    "生育成本": {
+      "last_offset": 200,
+      "done": true
+    },
+    "结婚率下降": {
+      "last_offset": 200,
+      "done": true
+    },
+    "结婚的意义": {
+      "last_offset": 200,
+      "done": true
+    },
+    "为什么要生孩子": {
+      "last_offset": 200,
+      "done": true
+    },
+    "丁克": {
+      "last_offset": 200,
+      "done": true
+    },
+    "生育率": {
+      "last_offset": 200,
+      "done": true
+    },
+    "婚姻制度": {
+      "last_offset": 200,
+      "done": true
+    },
+    "韭菜买房": {
+      "last_offset": 200,
+      "done": true
+    },
+    "买不起房": {
+      "last_offset": 200,
+      "done": true
+    },
+    "房价太高": {
+      "last_offset": 200,
+      "done": true
+    },
+    "房贷压力": {
+      "last_offset": 200,
+      "done": true
+    },
+    "买房上车": {
+      "last_offset": 200,
+      "done": true
+    },
+    "要不要买房": {
+      "last_offset": 200,
+      "done": true
+    },
+    "租房还是买房": {
+      "last_offset": 200,
+      "done": true
+    },
+    "首付": {
+      "last_offset": 200,
+      "done": true
+    },
+    "房价走势": {
+      "last_offset": 200,
+      "done": true
+    },
+    "一线城市买房": {
+      "last_offset": 200,
+      "done": true
+    },
+    "孔乙己": {
+      "last_offset": 200,
+      "done": true
+    },
+    "学历贬值": {
+      "last_offset": 200,
+      "done": true
+    },
+    "阶层固化": {
+      "last_offset": 200,
+      "done": true
+    },
+    "做题家": {
+      "last_offset": 200,
+      "done": true
+    },
+    "35岁危机": {
+      "last_offset": 200,
+      "done": true
+    },
+    "就业难": {
+      "last_offset": 200,
+      "done": true
+    },
+    "内卷": {
+      "last_offset": 200,
+      "done": true
+    },
+    "996": {
+      "last_offset": 200,
+      "done": true
+    },
+    "考研上岸": {
+      "last_offset": 200,
+      "done": true
+    },
+    "考公上岸": {
+      "last_offset": 200,
+      "done": true
+    },
+    "财务自由": {
+      "last_offset": 200,
+      "done": true
+    },
+    "副业": {
+      "last_offset": 200,
+      "done": true
+    },
+    "考公": {
+      "last_offset": 200,
+      "done": true
+    },
+    "职业规划": {
+      "last_offset": 200,
+      "done": true
+    },
+    "行业前景": {
+      "last_offset": 200,
+      "done": true
+    },
+    "转行": {
+      "last_offset": 200,
+      "done": true
+    },
+    "行业分析": {
+      "last_offset": 200,
+      "done": true
+    },
+    "躺平": {
+      "last_offset": 200,
+      "done": true
+    },
+    "摆烂": {
+      "last_offset": 200,
+      "done": true
+    },
+    "佛系": {
+      "last_offset": 200,
+      "done": true
+    },
+    "精神内耗": {
       "last_offset": -20,
       "done": false
     },
-    "躺平": {
+    "迷茫": {
+      "last_offset": -20,
+      "done": false
+    },
+    "年龄焦虑": {
+      "last_offset": -20,
+      "done": false
+    },
+    "奋斗": {
+      "last_offset": -20,
+      "done": false
+    },
+    "人生规划": {
+      "last_offset": -20,
+      "done": false
+    },
+    "逆袭": {
+      "last_offset": -20,
+      "done": false
+    },
+    "重启人生": {
+      "last_offset": -20,
+      "done": false
+    },
+    "认知升级": {
+      "last_offset": -20,
+      "done": false
+    },
+    "二十几岁": {
+      "last_offset": -20,
+      "done": false
+    },
+    "人生建议": {
       "last_offset": -20,
       "done": false
     }
   },
   "stats": {
-    "total_answers_crawled": 50,
+    "total_answers_crawled": 2500,
     "total_answers_skipped": 0,
-    "total_comments_collected": 104,
+    "total_comments_collected": 13518,
     "api_errors": 0,
     "network_interruptions": 0
   },
-  "last_successful_request": "2026-06-23T16:08:21",
-  "answer_id_count": 50
+  "last_successful_request": "2026-06-23T18:00:50",
+  "answer_id_count": 2500
 }
