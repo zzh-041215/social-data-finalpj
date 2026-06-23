@@ -1,15 +1,22 @@
 {
-  "timestamp": "2026-06-23T10:40:53",
+  "timestamp": "2026-06-23T16:08:21",
   "keyword_progress": {
+    "恐婚恐育": {
+      "last_offset": -20,
+      "done": false
+    },
     "躺平": {
-      "last_offset": 40,
+      "last_offset": -20,
       "done": false
     }
   },
   "stats": {
-    "total_answers_crawled": 1,
-    "total_comments_collected": 2
+    "total_answers_crawled": 50,
+    "total_answers_skipped": 0,
+    "total_comments_collected": 104,
+    "api_errors": 0,
+    "network_interruptions": 0
   },
-  "last_successful_request": "2026-06-23T10:40:53",
-  "answer_id_count": 1
+  "last_successful_request": "2026-06-23T16:08:21",
+  "answer_id_count": 50
 }

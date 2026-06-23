@@ -168,8 +168,7 @@ def dry_run(delay_min: float, delay_max: float) -> None:
         "author_follower_count": 12500,
         "voteup_count": 15200,
         "comment_count": 342,
-        "view_count": 280000,
-        "favorite_count": 5600,
+        "thanks_count": 1800,
         "keyword_searched": test_kw,
         "topic": "综合人生规划",
         "answer_url": f"https://www.zhihu.com/question/35849201/answer/999888777",
@@ -230,15 +229,14 @@ def dry_run(delay_min: float, delay_max: float) -> None:
     logger.info(f"  OK: checkpoint 已保存, "
                 f"answer_id_count={state.get('answer_id_count', '?')}")
 
-    # [B5] 统计验证
-    logger.info(f"[B5] 互动率计算验证...")
+    # [B5] 统计验证（知乎回答接口不下发浏览量/收藏数，改用 赞同+感谢+评论 作为互动量）
+    logger.info(f"[B5] 互动量计算验证...")
     voteup = mock_answer["voteup_count"]
-    favorite = mock_answer["favorite_count"]
+    thanks = mock_answer["thanks_count"]
     comments_count = mock_answer["comment_count"]
-    views = mock_answer["view_count"]
-    engagement = (voteup + favorite + comments_count) / views if views else 0
-    logger.info(f"  互动率 = ({voteup} + {favorite} + {comments_count}) / {views} = {engagement:.4f}")
-    logger.info(f"  OK: 互动率计算正常")
+    engagement = voteup + thanks + comments_count
+    logger.info(f"  互动量 = {voteup} + {thanks} + {comments_count} = {engagement}")
+    logger.info(f"  OK: 互动量计算正常")
 
     # ═══════════════════════════════════════════
     # Part C: 汇总
@@ -292,14 +290,14 @@ def main() -> None:
 
     # 显示配置
     max_a = args.max_answers or 0
-    est_min = (max_a * 2.7 * (args.delay_min + args.delay_max) / 2) / 60 if max_a else 0
+    est_min = (max_a * 2.0 * (args.delay_min + args.delay_max) / 2) / 60 if max_a else 0
     logger.info(f"配置: delay={args.delay_min}-{args.delay_max}s, "
                  f"workers={args.workers}, "
                  f"max_answers={args.max_answers or '无上限'}, "
                  f"resume={args.resume}")
     if est_min > 0:
         logger.info(f"预估耗时: ~{est_min:.0f} min (~{est_min/60:.1f}h) "
-                     f"@ {args.max_answers}条 / avg {2.7}次API调用/条")
+                     f"@ {args.max_answers}条 / avg {2.0}次API调用/条")
 
     # 创建爬虫并运行
     crawler = ZhihuCrawler()

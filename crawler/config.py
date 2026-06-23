@@ -81,7 +81,16 @@ API_SEARCH = "https://www.zhihu.com/api/v4/search_v3"
 API_ANSWER = "https://www.zhihu.com/api/v4/answers"
 API_QUESTION = "https://www.zhihu.com/api/v4/questions"
 API_COMMENTS = "https://www.zhihu.com/api/v4/comments"
+API_COMMENTS_V5 = "https://www.zhihu.com/api/v4/comment_v5/answers"
 API_USER = "https://www.zhihu.com/api/v4/members"
+
+# 回答详情接口必须传 include 才会下发正文与计数字段
+# （不传时响应里没有 content/voteup_count/comment_count，会导致空壳数据）
+ANSWER_INCLUDE = (
+    "content,excerpt,voteup_count,comment_count,thanks_count,"
+    "created_time,updated_time,question,author,"
+    "author.follower_count,author.headline,author.gender"
+)
 
 # ============================================================
 # HTTP 请求头（模拟浏览器）
@@ -176,7 +185,7 @@ ANSWER_COLUMNS = [
     "publish_time", "created_time", "updated_time",
     "author_name", "author_url_token", "author_headline",
     "author_follower_count",
-    "voteup_count", "comment_count", "view_count", "favorite_count",
+    "voteup_count", "comment_count", "thanks_count",
     "keyword_searched", "topic",
     "answer_url",
     "crawled_at",

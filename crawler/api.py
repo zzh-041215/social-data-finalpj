@@ -8,12 +8,14 @@
 
 import time
 import uuid
+import threading
 from typing import Optional
 
 import requests
 
 from crawler.config import (
-    API_SEARCH, API_ANSWER, API_QUESTION, API_COMMENTS, API_USER,
+    API_SEARCH, API_ANSWER, API_QUESTION, API_COMMENTS, API_COMMENTS_V5,
+    API_USER, ANSWER_INCLUDE,
     HEADERS, API_HEADERS,
     SEARCH_LIMIT, SEARCH_TYPE,
     MAX_OFFSET_PER_KEYWORD, MAX_COMMENTS_PER_ANSWER,
@@ -34,7 +36,7 @@ class ZhihuAPI:
         self.limiter = rate_limiter
         self.session = requests.Session()
         self.session.headers.update(HEADERS)
-        self.session.timeout = 30
+        self._session_lock = threading.Lock()  # requests.Session不是线程安全的
 
         # 用户信息缓存：url_token -> {name, follower, ...}
         self._user_cache: dict[str, dict] = {}
@@ -153,7 +155,8 @@ class ZhihuAPI:
                 logger.debug(f"ZSE签名生成失败: {e}")
 
         try:
-            resp = self.session.get(url, params=params)
+            with self._session_lock:
+                resp = self.session.get(url, params=params, timeout=30)
         except requests.RequestException as e:
             net_error_counter.record_error()
             logger.debug(f"请求失败 [{url}]: {type(e).__name__}")
@@ -317,9 +320,12 @@ class ZhihuAPI:
     # ═══════════════════════════════════════════════════
 
     def get_answer_detail(self, answer_id: int) -> Optional[dict]:
-        """获取回答详细信息。"""
+        """获取回答详细信息。
+
+        注意：必须传 include 参数，否则知乎不下发 content/voteup_count 等字段。
+        """
         url = f"{API_ANSWER}/{answer_id}"
-        resp = self._api_get(url, needs_zse=False)
+        resp = self._api_get(url, params={"include": ANSWER_INCLUDE}, needs_zse=False)
 
         if not self._check_response(resp, f"回答 {answer_id}"):
             return None
@@ -343,8 +349,7 @@ class ZhihuAPI:
             "author_follower_count": author.get("follower_count", 0),
             "voteup_count": adata.get("voteup_count", 0),
             "comment_count": adata.get("comment_count", 0),
-            "view_count": adata.get("view_count", 0),
-            "favorite_count": adata.get("favorite_count", 0),
+            "thanks_count": adata.get("thanks_count", 0),
         }
 
     # ═══════════════════════════════════════════════════
@@ -372,6 +377,7 @@ class ZhihuAPI:
             "limit": str(limit),
             "offset": str(offset),
             "sort_by": sort_by,
+            "include": "data[*]." + ANSWER_INCLUDE.replace(",", ",data[*]."),
         }
         resp = self._api_get(url, params, needs_zse=False)
 
@@ -403,8 +409,7 @@ class ZhihuAPI:
                 "author_follower_count": author.get("follower_count", 0),
                 "voteup_count": adata.get("voteup_count", 0),
                 "comment_count": adata.get("comment_count", 0),
-                "view_count": adata.get("view_count", 0),
-                "favorite_count": adata.get("favorite_count", 0),
+                "thanks_count": adata.get("thanks_count", 0),
             })
 
         return answers
@@ -426,12 +431,12 @@ class ZhihuAPI:
         Returns:
             评论列表
         """
-        # 知乎评论API: /api/v4/comments/{answer_id}/root_comments?order=normal
-        url = f"{API_COMMENTS}/{answer_id}/root_comments"
+        # 知乎新版评论API（旧的 /comments/{id}/root_comments 已废弃，返回404）
+        url = f"{API_COMMENTS_V5}/{answer_id}/root_comment"
         params = {
-            "order": "normal",
+            "order_by": "score",
             "limit": str(min(limit, 20)),
-            "offset": "0",
+            "offset": "",
         }
         resp = self._api_get(url, params, needs_zse=False)
 
@@ -448,8 +453,8 @@ class ZhihuAPI:
                 "comment_id": c.get("id", 0),
                 "content": content_text,
                 "content_length": len(content_text),
-                "like_count": c.get("vote_count", 0),
-                "reply_count": c.get("reply_count", 0),
+                "like_count": c.get("like_count", 0),
+                "reply_count": c.get("child_comment_count", 0),
                 "publish_time": c.get("created_time", 0),
                 "parent_id": 0,  # root comment
             })
@@ -468,7 +473,11 @@ class ZhihuAPI:
             return self._user_cache[url_token]
 
         url = f"{API_USER}/{url_token}"
-        resp = self._api_get(url, needs_zse=False)
+        # members 端点同样需要 include 才会下发 follower_count
+        resp = self._api_get(
+            url, params={"include": "follower_count,headline,gender"},
+            needs_zse=False,
+        )
 
         if not self._check_response(resp, f"用户 {url_token}"):
             return None

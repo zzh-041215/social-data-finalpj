@@ -145,6 +145,7 @@ class ZhihuCrawler:
 
         with ThreadPoolExecutor(max_workers=SEARCH_WORKERS) as executor:
             futures = {}
+            kw_pending: dict[str, int] = {}  # 每个关键词尚未完成的搜索任务数
             for topic, kws in topic_groups.items():
                 for kw in kws:
                     if self.keyword_progress.get(kw, {}).get("done", False):
@@ -159,10 +160,7 @@ class ZhihuCrawler:
                             self._search_one_offset, kw, topic, offset
                         )
                         futures[fut] = (kw, topic, offset)
-                    # 标记关键词已调度
-                    self.keyword_progress[kw] = {
-                        "last_offset": MAX_OFFSET_PER_KEYWORD, "done": True
-                    }
+                        kw_pending[kw] = kw_pending.get(kw, 0) + 1
 
             for fut in as_completed(futures):
                 kw, topic, offset = futures[fut]
@@ -188,6 +186,14 @@ class ZhihuCrawler:
                                 ))
                 except Exception as e:
                     logger.error(f"搜索异常 [{kw} offset={offset}]: {e}")
+
+                # 仅在该关键词所有搜索任务都完成、且未收到中断信号时才标记 done，
+                # 避免中途 Ctrl+C 后 --resume 误以为已完成而漏页。
+                kw_pending[kw] -= 1
+                if kw_pending[kw] == 0 and not self._shutdown_requested:
+                    self.keyword_progress[kw] = {
+                        "last_offset": MAX_OFFSET_PER_KEYWORD, "done": True
+                    }
 
                 # 检查是否达到上限
                 if max_answers and len(all_results) >= max_answers:
@@ -273,21 +279,11 @@ class ZhihuCrawler:
             if question_title and not answer_info.get("question_title"):
                 answer_info["question_title"] = question_title
 
-            # ── 获取答主详情（如果需要粉丝数等） ──
-            url_token = answer_info.get("author_url_token", author_url_token)
-            if url_token:
-                user_info = self.api.get_user_info(url_token)
-                if user_info:
-                    answer_info["author_follower_count"] = user_info.get("follower_count", 0)
-                    answer_info["author_name"] = (
-                        user_info.get("name") or answer_info.get("author_name", "")
-                    )
-                    answer_info["author_headline"] = (
-                        user_info.get("headline") or answer_info.get("author_headline", "")
-                    )
-                else:
-                    answer_info["author_follower_count"] = \
-                        self.api.get_cached_user_follower(url_token)
+            # 答主信息（粉丝数/简介/昵称）已由 ANSWER_INCLUDE 在回答详情里一并返回，
+            # 无需再单独请求 members 端点（省去每条回答一次 API 调用，更礼貌、更快）。
+            # 仅在回答详情未给出昵称时，用搜索结果里的昵称兜底。
+            if not answer_info.get("author_name"):
+                answer_info["author_name"] = author_name
 
             # 时间戳转换
             pubdate_ts = answer_info.get("publish_time", created_time)

@@ -1,5 +1,0 @@
-2026-06-20 00:15:26 [INFO ] crawler | 日志文件: C:\Users\henry\OneDrive\Desktop\复旦大学\大三（专业课）\下学期\社会数据挖掘\期末课程项目\data\logs\crawl_20260620_001526.log
-2026-06-20 00:15:33 [DEBUG] crawler | 首页cookies: {'buvid3': '3F44FF94-33D1-6316-B416-011E109CA53A24209infoc', 'b_nut': '1781885724'}
-2026-06-20 00:15:35 [DEBUG] crawler | WBI密钥获取成功 (nav code=-101)
-2026-06-20 00:15:35 [DEBUG] crawler | WBI密钥已更新: mixin_key=ea1db124...
-2026-06-20 00:15:35 [DEBUG] crawler | WBI密钥初始化成功
