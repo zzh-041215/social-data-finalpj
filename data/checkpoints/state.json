@@ -1,5 +1,5 @@
 {
-  "timestamp": "2026-06-23T10:03:32",
+  "timestamp": "2026-06-23T10:26:02",
   "keyword_progress": {
     "躺平": {
       "last_offset": 40,
@@ -10,6 +10,6 @@
     "total_answers_crawled": 1,
     "total_comments_collected": 2
   },
-  "last_successful_request": "2026-06-23T10:03:32",
+  "last_successful_request": "2026-06-23T10:26:02",
   "answer_id_count": 1
 }

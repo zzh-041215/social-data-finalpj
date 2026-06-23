@@ -164,6 +164,7 @@ ANSWERS_CSV = os.path.join(RAW_DIR, "answers.csv")
 COMMENTS_CSV = os.path.join(RAW_DIR, "comments.csv")
 CHECKPOINT_STATE = os.path.join(CHECKPOINT_DIR, "state.json")
 CHECKPOINT_ANSWER_IDS = os.path.join(CHECKPOINT_DIR, "crawled_answer_ids.txt")
+COOKIES_FILE = os.path.join(PROJECT_ROOT, "crawler", "cookies.txt")
 
 # ============================================================
 # CSV 列定义

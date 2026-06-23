@@ -17,7 +17,7 @@ from crawler.config import (
     HEADERS, API_HEADERS,
     SEARCH_LIMIT, SEARCH_TYPE,
     MAX_OFFSET_PER_KEYWORD, MAX_COMMENTS_PER_ANSWER,
-    MIN_ANSWER_LENGTH,
+    MIN_ANSWER_LENGTH, COOKIES_FILE,
 )
 from crawler.utils import (
     logger, AdaptiveRateLimiter, ZhihuZSE,
@@ -39,32 +39,82 @@ class ZhihuAPI:
         # 用户信息缓存：url_token -> {name, follower, ...}
         self._user_cache: dict[str, dict] = {}
 
-        # Step 1: 访问知乎首页获取必需cookies（d_c0）
+        # 是否持有登录态 cookie（z_c0 是知乎登录凭证）
+        self._has_auth = False
+
+        # Step 1: 加载 cookie（优先 cookies.txt，否则访问首页获取游客cookie）
         self._init_cookies()
 
-        # Step 2: 初始化 ZSE 签名器
+        # Step 2: 初始化 ZSE 签名器（仅在无登录态时需要）
         self.zse = ZhihuZSE(self.session)
         logger.debug("知乎API模块初始化完成")
 
     def _init_cookies(self) -> None:
-        """访问知乎首页获取 d_c0 等必需cookies。"""
-        try:
-            resp = self.session.get(
-                "https://www.zhihu.com/",
-                timeout=20,
-            )
-            cookies = dict(self.session.cookies.get_dict())
-            logger.debug(f"知乎首页cookies: {cookies}")
-            if "d_c0" not in cookies:
-                # 手动设置 d_c0
+        """初始化 session cookies：优先从 cookies.txt 加载，否则访问首页获取。"""
+        # Step 1: 尝试从文件加载登录cookie
+        cookies_loaded = self._load_cookies_from_file()
+
+        if cookies_loaded:
+            logger.info(f"已从 cookies.txt 加载 {len(cookies_loaded)} 个cookie")
+        else:
+            # Step 2: 回退到访问首页获取游客cookie
+            logger.info("未找到 cookies.txt，访问首页获取游客cookie...")
+            try:
+                resp = self.session.get(
+                    "https://www.zhihu.com/",
+                    timeout=20,
+                )
+                cookies = dict(self.session.cookies.get_dict())
+                logger.debug(f"知乎首页cookies: {cookies}")
+                if "d_c0" not in cookies:
+                    d_c0 = str(uuid.uuid4()).replace("-", "")[:32]
+                    self.session.cookies.set("d_c0", d_c0, domain=".zhihu.com")
+                    logger.debug(f"手动设置 d_c0: {d_c0}")
+            except Exception as e:
+                logger.warning(f"获取知乎首页cookies失败: {e}")
                 d_c0 = str(uuid.uuid4()).replace("-", "")[:32]
                 self.session.cookies.set("d_c0", d_c0, domain=".zhihu.com")
-                logger.debug(f"手动设置 d_c0: {d_c0}")
+
+    def _load_cookies_from_file(self) -> dict[str, str]:
+        """
+        从 cookies.txt 加载登录cookie到 session。
+
+        文件格式（每行一个 cookie）：
+            cookie_name=cookie_value
+
+        返回加载的 cookie 字典，若文件不存在或为空则返回 {}。
+        """
+        import os as _os
+
+        if not _os.path.exists(COOKIES_FILE):
+            return {}
+
+        loaded = {}
+        try:
+            with open(COOKIES_FILE, "r", encoding="utf-8") as f:
+                for line in f:
+                    line = line.strip()
+                    if not line or line.startswith("#"):
+                        continue
+                    # 支持 name=value 格式
+                    if "=" in line:
+                        key, _, value = line.partition("=")
+                        key = key.strip()
+                        value = value.strip()
+                        if key and value:
+                            self.session.cookies.set(key, value, domain=".zhihu.com")
+                            loaded[key] = value[:30] + "..."  # 只记录部分值用于日志
         except Exception as e:
-            logger.warning(f"获取知乎首页cookies失败: {e}")
-            # 即使首页失败也设置基本cookie
-            d_c0 = str(uuid.uuid4()).replace("-", "")[:32]
-            self.session.cookies.set("d_c0", d_c0, domain=".zhihu.com")
+            logger.warning(f"读取 cookies.txt 失败: {e}")
+            return {}
+
+        if loaded:
+            logger.info(f"已加载cookie: {list(loaded.keys())}")
+            # 检测是否有登录态（z_c0 是知乎的核心登录凭证）
+            if "z_c0" in loaded:
+                self._has_auth = True
+                logger.info("检测到登录cookie (z_c0)，将跳过 x-zse-96 签名")
+        return loaded
 
     # ═══════════════════════════════════════════════════
     # 通用请求方法
@@ -193,9 +243,12 @@ class ZhihuAPI:
             "limit": str(limit),
         }
 
+        # 有登录cookie时不需要 x-zse-96，否则可能因编码表版本不匹配导致403
+        needs_zse = not self._has_auth
+
         resp = self._api_get(
             API_SEARCH, params,
-            needs_zse=True,  # 搜索端点严格要求 x-zse-96
+            needs_zse=needs_zse,
         )
         if not self._check_response(resp, f"搜索 {keyword} offset={offset}"):
             return None

@@ -1,0 +1,30 @@
+# 数据目录（运行时生成）
+data/
+
+# 登录凭据（切勿提交！）
+crawler/cookies.txt
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Claude Code
+.claude/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Jupyter
+.ipynb_checkpoints/
+
+# 虚拟环境
+venv/
+.venv/

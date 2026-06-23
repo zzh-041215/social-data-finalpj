@@ -245,15 +245,14 @@ def dry_run(delay_min: float, delay_max: float) -> None:
     logger.info("")
     logger.info("=" * 60)
     logger.info("Dry-run 完成!")
-    logger.info(f"  连通性: suggest API {'通' if True else '不通'}, "
+    logger.info(f"  连通性: suggest API 通, "
                 f"search API {'通' if api_works else '待配置'}")
     logger.info(f"  管道验证: 全部通过 (CSV写入/Checkpoint/评论/统计)")
     logger.info(f"  CSV文件: {storage.answers_path}")
     if not api_works:
         logger.info("")
-        logger.info("  ⚠ Search API 需要更新 x-zse-96 签名或提供登录Cookie。")
-        logger.info("  临时方案: 从浏览器导出知乎cookie到 crawler/cookies.txt")
-        logger.info("  或运行: pip install zhihu-scraper 使用社区维护的签名算法")
+        logger.info("  ⚠ Search API 不通。请确保 crawler/cookies.txt 中有有效的登录cookie (z_c0)")
+        logger.info("  获取方法: 浏览器登录知乎 → F12 → Application → Cookies → 复制 z_c0 等字段")
     logger.info("=" * 60)
 
 
