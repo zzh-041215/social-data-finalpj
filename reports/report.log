@@ -1,4 +1,4 @@
-This is XeTeX, Version 3.141592653-2.6-0.999996 (TeX Live 2024) (preloaded format=xelatex 2025.1.18)  23 JUN 2026 22:23
+This is XeTeX, Version 3.141592653-2.6-0.999996 (TeX Live 2024) (preloaded format=xelatex 2025.1.18)  23 JUN 2026 22:53
 entering extended mode
  restricted \write18 enabled.
  file:line:error style messages enabled.
@@ -615,21 +615,22 @@ File: umsb.fd 2013/01/14 v3.01 AMS symbols B
 ]
 
 LaTeX Font Info:    Font shape `TU/SimSun(0)/m/sl' in size <10.95> not available
-(Font)              Font shape `TU/SimSun(0)/m/it' tried instead on input line 94.
+(Font)              Font shape `TU/SimSun(0)/m/it' tried instead on input line 95.
 [2]
-
-[3]
-Overfull \hbox (41.10612pt too wide) detected at line 129
+Overfull \hbox (47.05197pt too wide) detected at line 131
 [][][][]\OT1/cmr/m/n/10.95 ([][] + 1) = \OML/cmm/m/it/10.95 ^^L[] \OT1/cmr/m/n/10.95 + [] \OML/cmm/m/it/10.95 ^^L[] \U/msb/m/n/10.95 1\OT1/cmr/m/n/10.95 [[][] = \OML/cmm/m/it/10.95 k\OT1/cmr/m/n/10.95 ] + \OML/cmm/m/it/10.95 ^^M[] []\OT1/cmr/m/n/10.95 ([][] + 1) + \OML/cmm/m/it/10.95 ^^M[] []\OT1/cmr/m/n/10.95 ([][]) + \OML/cmm/m/it/10.95 ^^M[] [][] \OT1/cmr/m/n/10.95 + \OML/cmm/m/it/10.95 ^^N[] \OT1/cmr/m/n/10.95 + \OML/cmm/m/it/10.95 ^^R[] \OT1/cmr/m/n/10.95 + \OML/cmm/m/it/10.95 "[];
  []
 
+
+
+[3]
 File: ../analysis/figures/emotion_dist.png Graphic file (type bmp)
 <../analysis/figures/emotion_dist.png>
+File: ../analysis/figures/emotion_trend.png Graphic file (type bmp)
+<../analysis/figures/emotion_trend.png>
 
 
 [4]
-File: ../analysis/figures/emotion_trend.png Graphic file (type bmp)
-<../analysis/figures/emotion_trend.png>
 File: ../analysis/figures/marker_words.png Graphic file (type bmp)
 <../analysis/figures/marker_words.png>
 
@@ -637,11 +638,11 @@ File: ../analysis/figures/marker_words.png Graphic file (type bmp)
 [5]
 
 Package hyperref Warning: Token not allowed in a PDF string (Unicode):
-(hyperref)                removing `math shift' on input line 200.
+(hyperref)                removing `math shift' on input line 211.
 
 
 Package hyperref Warning: Token not allowed in a PDF string (Unicode):
-(hyperref)                removing `math shift' on input line 200.
+(hyperref)                removing `math shift' on input line 211.
 
 File: ../analysis/figures/event_study.png Graphic file (type bmp)
 <../analysis/figures/event_study.png>
@@ -677,12 +678,12 @@ Package fontspec Info:
 (fontspec)             <->"FangSong/OT:script=hani;language=dflt;"
 
 
-Overfull \hbox (2.26149pt too wide) in paragraph at lines 251--252
+Overfull \hbox (2.26149pt too wide) in paragraph at lines 262--263
 []\TU/SimSun(0)/b/n/10.95 附 录 \TU/lmr/bx/n/10.95 A\TU/SimSun(0)/m/n/10.95 ：|  四 类 情 绪 词 典 完 整 词 表 \TU/lmr/m/n/10.95 (\TU/SimSun(0)/m/n/10.95 积 极 \TU/lmr/m/n/10.95 91 \TU/SimSun(0)/m/n/10.95 词、|  焦 虑 \TU/lmr/m/n/10.95 99 \TU/SimSun(0)/m/n/10.95 词、|  解 构 \TU/lmr/m/n/10.95 142 \TU/SimSun(0)/m/n/10.95 词\TU/lmr/m/n/10.95 )\TU/SimSun(0)/m/n/10.95 ，|  见 \TU/lmtt/m/n/10.95 analysis/lexicon/\TU/SimSun(0)/m/n/10.95 。| 
  []
 
 
-Overfull \hbox (4.97736pt too wide) in paragraph at lines 253--254
+Overfull \hbox (4.97736pt too wide) in paragraph at lines 264--265
 []\TU/SimSun(0)/b/n/10.95 附 录 \TU/lmr/bx/n/10.95 C\TU/SimSun(0)/m/n/10.95 ：|  分 类 器 人 工 校 验 与 阈 值 敏 感 性，|  见 \TU/lmtt/m/n/10.95 tables/kappa.txt\TU/SimSun(0)/m/n/10.95 、| \TU/lmtt/m/n/10.95 classifier_validation.csv\TU/SimSun(0)/m/n/10.95 、|
  []
 
@@ -695,24 +696,21 @@ L3 programming layer <2022/07/14>
  ***********
 
 
-LaTeX Warning: Label(s) may have changed. Rerun to get cross-references right.
-
-
 Package rerunfilecheck Warning: File `report.out' has changed.
 (rerunfilecheck)                Rerun to get outlines right
 (rerunfilecheck)                or use package `bookmark'.
 
 Package rerunfilecheck Info: Checksums for `report.out':
-(rerunfilecheck)             Before: 450DB466531C623BD08C4F74CACC108B;1499
-(rerunfilecheck)             After:  DFAF1A2809760B137659AC9932CBCF7D;3410.
+(rerunfilecheck)             Before: 116A862FBE6AC2F114189A94A9C278D5;3198
+(rerunfilecheck)             After:  E46DE1014AF19368DE49242129FC7698;3136.
  ) 
 Here is how much of TeX's memory you used:
- 18157 strings out of 473846
- 398731 string characters out of 5733563
- 807993 words of memory out of 5000000
- 40940 multiletter control sequences out of 15000+600000
- 570636 words of font info for 122 fonts, out of 8000000 for 9000
+ 18142 strings out of 473846
+ 397838 string characters out of 5733563
+ 807988 words of memory out of 5000000
+ 40927 multiletter control sequences out of 15000+600000
+ 570620 words of font info for 120 fonts, out of 8000000 for 9000
  1348 hyphenation exceptions out of 8191
- 93i,11n,111p,462b,545s stack positions out of 10000i,1000n,20000p,200000b,200000s
+ 93i,11n,111p,432b,545s stack positions out of 10000i,1000n,20000p,200000b,200000s
 
 Output written on report.pdf (8 pages).
