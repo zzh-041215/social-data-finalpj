@@ -20,6 +20,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from crawler.config import (
     ALL_KEYWORDS, KEYWORD_GROUPS,
     DELAY_MIN, DELAY_MAX, SEARCH_WORKERS,
+    DEFAULT_MAX_ANSWERS,
     ensure_dirs,
 )
 from crawler.utils import setup_logging, logger, AdaptiveRateLimiter
@@ -50,8 +51,8 @@ def parse_args() -> argparse.Namespace:
         help="指定关键词（逗号分隔），默认使用全部关键词"
     )
     p.add_argument(
-        "--max-answers", type=int, default=None,
-        help="回答数量上限（达到后停止）"
+        "--max-answers", type=int, default=DEFAULT_MAX_ANSWERS,
+        help=f"回答数量上限（达到后停止，默认: {DEFAULT_MAX_ANSWERS}）"
     )
     p.add_argument(
         "--delay-min", type=float, default=DELAY_MIN,
@@ -290,10 +291,15 @@ def main() -> None:
         logger.info(f"指定关键词: {keywords}")
 
     # 显示配置
+    max_a = args.max_answers or 0
+    est_min = (max_a * 2.7 * (args.delay_min + args.delay_max) / 2) / 60 if max_a else 0
     logger.info(f"配置: delay={args.delay_min}-{args.delay_max}s, "
                  f"workers={args.workers}, "
                  f"max_answers={args.max_answers or '无上限'}, "
                  f"resume={args.resume}")
+    if est_min > 0:
+        logger.info(f"预估耗时: ~{est_min:.0f} min (~{est_min/60:.1f}h) "
+                     f"@ {args.max_answers}条 / avg {2.7}次API调用/条")
 
     # 创建爬虫并运行
     crawler = ZhihuCrawler()

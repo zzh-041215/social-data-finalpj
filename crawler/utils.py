@@ -88,44 +88,52 @@ class AdaptiveRateLimiter:
         self._backoff_until = 0.0       # 在此时间之前强制等待
         self._current_backoff = RATE_LIMIT_BACKOFF_BASE
         self._consecutive_429s = 0
+        self._lock = threading.Lock()   # 多线程安全：防止竞态导致扎堆请求触发429
 
     def wait(self) -> float:
-        """等待到可以发下一个请求，返回实际等待秒数。"""
-        now = time.time()
-
-        # 如果处于退避状态，先完成退避
-        if now < self._backoff_until:
-            sleep = self._backoff_until - now
-            time.sleep(sleep)
+        """
+        等待到可以发下一个请求，返回实际等待秒数。
+        线程安全：用锁保证请求间隔均匀，防止多线程同时读到旧时间戳而扎堆发请求。
+        锁只保护计时逻辑，HTTP请求本身仍然并行（锁在请求发出前已释放）。
+        """
+        with self._lock:
             now = time.time()
 
-        # 计算自上次请求以来的间隔
-        elapsed = now - self.last_request_time
-        target_delay = random.uniform(self.min_delay, self.max_delay)
-        wait_time = max(0.0, target_delay - elapsed)
+            # 如果处于退避状态，先完成退避
+            if now < self._backoff_until:
+                sleep = self._backoff_until - now
+                time.sleep(sleep)
+                now = time.time()
 
-        if wait_time > 0:
-            time.sleep(wait_time)
+            # 计算自上次请求以来的间隔
+            elapsed = now - self.last_request_time
+            target_delay = random.uniform(self.min_delay, self.max_delay)
+            wait_time = max(0.0, target_delay - elapsed)
 
-        self.last_request_time = time.time()
-        return wait_time
+            if wait_time > 0:
+                time.sleep(wait_time)
+
+            self.last_request_time = time.time()
+            return wait_time
 
     def report_429(self) -> None:
-        """收到429后调用，进入指数退避。"""
-        self._consecutive_429s += 1
-        backoff = min(
-            self._current_backoff * (2 ** (self._consecutive_429s - 1)),
-            RATE_LIMIT_BACKOFF_MAX
-        )
-        self._backoff_until = time.time() + backoff
-        logger.warning(f"收到429限速，退避 {backoff:.1f}s "
-                       f"(连续第{self._consecutive_429s}次)")
+        """收到429后调用，进入指数退避。线程安全。"""
+        with self._lock:
+            self._consecutive_429s += 1
+            backoff = min(
+                self._current_backoff * (2 ** (self._consecutive_429s - 1)),
+                RATE_LIMIT_BACKOFF_MAX
+            )
+            self._backoff_until = time.time() + backoff
+            logger.warning(f"收到429限速，退避 {backoff:.1f}s "
+                           f"(连续第{self._consecutive_429s}次)")
 
     def report_success(self) -> None:
-        """请求成功后调用，逐步恢复正常延迟。"""
-        if self._consecutive_429s > 0:
-            self._consecutive_429s = max(0, self._consecutive_429s - 1)
-        self._backoff_until = 0.0
+        """请求成功后调用，逐步恢复正常延迟。线程安全。"""
+        with self._lock:
+            if self._consecutive_429s > 0:
+                self._consecutive_429s = max(0, self._consecutive_429s - 1)
+            self._backoff_until = 0.0
 
     @property
     def is_backing_off(self) -> bool:

@@ -113,10 +113,10 @@ API_HEADERS: dict[str, str] = {
 # ============================================================
 # 自适应限速参数
 # ============================================================
-DELAY_MIN = 1.2              # 正常请求最小延迟（秒）— 知乎限速较严
-DELAY_MAX = 2.5              # 正常请求最大延迟（秒）
-RATE_LIMIT_BACKOFF_BASE = 6.0   # 收到429后初始退避秒数
-RATE_LIMIT_BACKOFF_MAX = 90.0   # 最大退避秒数
+DELAY_MIN = 0.8              # 正常请求最小延迟（秒）
+DELAY_MAX = 1.5              # 正常请求最大延迟（秒）
+RATE_LIMIT_BACKOFF_BASE = 10.0  # 收到429后初始退避秒数（加重惩罚，避免连续触发）
+RATE_LIMIT_BACKOFF_MAX = 120.0  # 最大退避秒数
 MAX_RETRIES = 3                # 单次请求最大重试次数
 NETWORK_PAUSE_SEC = 300        # 连续网络错误后暂停5分钟
 MAX_CONSECUTIVE_NETWORK_ERRORS = 10  # 超过此次数则退出
@@ -125,9 +125,10 @@ MAX_CONSECUTIVE_NETWORK_ERRORS = 10  # 超过此次数则退出
 # 搜索 & 分页参数
 # ============================================================
 SEARCH_LIMIT = 20               # 知乎每页返回数
-MAX_OFFSET_PER_KEYWORD = 200    # 每个关键词最多搜索 offset=0,20,...,200（共10页）
+MAX_OFFSET_PER_KEYWORD = 200    # 每个关键词最多搜索 offset=0,20,...,200（共11页）
 SEARCH_TYPE = "general"         # 知乎搜索类型
 MAX_COMMENTS_PER_ANSWER = 20    # 每回答最多取20条评论
+DEFAULT_MAX_ANSWERS = 2500      # 默认回答采集上限（适合轻薄本 ~2h）
 
 # ============================================================
 # 过滤规则
