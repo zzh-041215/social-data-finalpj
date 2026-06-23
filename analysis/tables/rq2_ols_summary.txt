@@ -8,7 +8,7 @@ Dep. Variable:             log_voteup   R-squared:                       0.232
 Model:                            OLS   Adj. R-squared:                  0.222
 Method:                 Least Squares   F-statistic:                     29.55
 Date:                Tue, 23 Jun 2026   Prob (F-statistic):          1.21e-148
-Time:                        18:35:58   Log-Likelihood:                -5334.8
+Time:                        21:42:00   Log-Likelihood:                -5334.8
 No. Observations:                2503   AIC:                         1.074e+04
 Df Residuals:                    2470   BIC:                         1.093e+04
 Df Model:                          32                                         

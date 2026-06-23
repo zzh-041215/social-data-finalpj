@@ -86,6 +86,48 @@ def _contrast_test(res, a: str, b: str) -> dict:
     }
 
 
+def _relabel(df: pd.DataFrame, neutral_mask: pd.Series, share_min: float = 0.40) -> pd.Series:
+    """按给定中性掩码 + 主导份额规则重新赋情绪标签（用已存的分数列）。"""
+    s = df[["s_积极", "s_焦虑", "s_解构"]]
+    total = s.sum(axis=1)
+    top = s.idxmax(axis=1).str.replace("s_", "", regex=False)
+    share = s.max(axis=1) / total.replace(0, np.nan)
+    lab = top.where(share >= share_min, NEUTRAL)
+    lab = lab.where(~neutral_mask, NEUTRAL)
+    return lab
+
+
+def threshold_sensitivity(df: pd.DataFrame) -> pd.DataFrame:
+    """阈值敏感性：在多种中性判定下报告 解构-积极/解构-焦虑 对比的 β 与 p。"""
+    total = df[["s_积极", "s_焦虑", "s_解构"]].sum(axis=1)
+    ntok = np.where(df["emo_density"] > 0, total / df["emo_density"].replace(0, np.nan), 1.0)
+    intensity = total / np.sqrt(np.where(ntok > 0, ntok, 1.0))
+
+    schemes = []
+    for fl in (1.0, 1.5, 2.0):
+        schemes.append((f"计数法 floor={fl}", total < fl))
+    for th in (0.05, 0.07, 0.09):
+        schemes.append((f"sqrt归一 th={th}", pd.Series(intensity, index=df.index) < th))
+
+    rows = []
+    for name, mask in schemes:
+        d = df.copy()
+        d["emotion"] = pd.Categorical(_relabel(d, mask), categories=EMOTIONS)
+        res = smf.ols(f"log_voteup ~ {EMO_TERM} + {BASE_CONTROLS}", data=d).fit(cov_type="HC1")
+        ca = _contrast_test(res, "解构", "积极")
+        cf = _contrast_test(res, "解构", "焦虑")
+        rows.append({
+            "中性判定方案": name,
+            "中性占比": round((d["emotion"] == NEUTRAL).mean(), 3),
+            "解构-积极_β": ca.get("差值"), "解构-积极_p": ca.get("p值"),
+            "解构-焦虑_β": cf.get("差值"), "解构-焦虑_p": cf.get("p值"),
+        })
+    out = pd.DataFrame(rows)
+    out.to_csv(os.path.join(TABLES_DIR, "rq2_threshold_sensitivity.csv"),
+               index=False, encoding="utf-8-sig")
+    return out
+
+
 def run() -> pd.DataFrame:
     ensure_dirs()
     df = _prep(read_csv(LABELED_ANSWERS))
@@ -133,7 +175,16 @@ def run() -> pd.DataFrame:
     print("[L3] 解构 vs 其他情绪（核心对比）:")
     for c in contrasts:
         print(f"      {c['对比']}: 差值{c['差值']:+.3f} (p={c['p值']}) → {c['结论']}")
+
+    # 阈值敏感性（证明结论不依赖单一中性阈值）
+    sens = threshold_sensitivity(df)
+    print("[L3] 中性阈值敏感性（解构-积极 对比）:")
+    for _, r in sens.iterrows():
+        print(f"      {r['中性判定方案']:<16} 中性{r['中性占比']:.0%} | "
+              f"解构-积极 β{r['解构-积极_β']:+.3f}(p={r['解构-积极_p']})")
+
     print(f"[L3] 系数对比表: {coef_path} | 对比检验: {con_path}")
+    print(f"[L3] 敏感性表: {os.path.join(TABLES_DIR, 'rq2_threshold_sensitivity.csv')}")
     print(f"[L3] 主模型全表: {summary_path}")
     return coef
 

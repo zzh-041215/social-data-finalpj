@@ -35,6 +35,9 @@ INTENSIFY_FACTOR = 1.5
 WINDOW = 2  # 否定/程度副词的前向窗口
 
 # 中性判定阈值（情绪词密度 = 情绪命中权重 / 词数）。低于此值判中性。
+# 注：曾尝试改为与长度无关的计数法(HIT_FLOOR)以提升 RQ2 显著性，但 497 条人工
+# 标注显示密度法 Kappa=0.79（人工中性占比 29.8% ≈ 本法 31%）显著优于计数法
+# (Kappa≤0.69)。故保留密度法——以人工校验为准，不为显著性牺牲分类准确度。
 DENSITY_MIN = 0.010
 # 主导类份额阈值：最高情绪类占三类总分比例低于此值视为情绪混杂 → 中性
 SHARE_MIN = 0.40
@@ -111,14 +114,15 @@ def classify_text(content: str, title: str, lex: dict[str, set[str]]) -> dict:
     density = total / n_tokens
 
     if total <= 0 or density < DENSITY_MIN:
+        # 情绪词密度过低 → 中性（信息型）
         label = NEUTRAL
         confidence = float(1.0 - min(density / DENSITY_MIN, 1.0)) if total > 0 else 1.0
     else:
         top_cls = max(scores, key=scores.get)
         share = scores[top_cls] / total
         if share < SHARE_MIN:
-            label = NEUTRAL
-            confidence = float(1.0 - share)  # 情绪混杂，低置信
+            label = NEUTRAL  # 多类情绪混杂、无主导 → 中性
+            confidence = float(1.0 - share)
         else:
             label = top_cls
             confidence = float(share)
@@ -128,7 +132,8 @@ def classify_text(content: str, title: str, lex: dict[str, set[str]]) -> dict:
         "s_积极": round(scores["积极"], 3),
         "s_焦虑": round(scores["焦虑"], 3),
         "s_解构": round(scores["解构"], 3),
-        "emo_density": round(density, 4),
+        "emo_total": round(total, 3),
+        "emo_density": round(total / n_tokens, 4),  # 仅诊断用
         "emo_confidence": round(confidence, 3),
     }
 
