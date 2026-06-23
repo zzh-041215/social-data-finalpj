@@ -1,9 +1,9 @@
 """
-B站API封装：搜索、视频详情、评论、用户信息 四个端点
-- WBI 签名（绕过 -1200 降级过滤）
-- requests.Session 复用TCP连接 + buvid3 Cookie
+知乎 API 封装：搜索、回答详情、评论、用户信息 四个端点
+- requests.Session 复用TCP连接 + 自动cookie管理
+- 可选 x-zse-96 签名（用于搜索等严格端点）
 - 搜索结果预筛选（减少不必要的详情API调用）
-- 自适应限速 + 429/412退避
+- 自适应限速 + 429/403退避
 """
 
 import time
@@ -13,21 +13,22 @@ from typing import Optional
 import requests
 
 from crawler.config import (
-    API_SEARCH, API_VIDEO_INFO, API_COMMENTS, API_USER_INFO,
-    HEADERS, API_HEADERS, SEARCH_PAGE_SIZE, SEARCH_ORDERS,
-    MAX_PAGES_PER_KEYWORD, MAX_COMMENTS_PER_VIDEO,
-    MIN_VIEW_COUNT, MIN_DURATION_SEC,
+    API_SEARCH, API_ANSWER, API_QUESTION, API_COMMENTS, API_USER,
+    HEADERS, API_HEADERS,
+    SEARCH_LIMIT, SEARCH_TYPE,
+    MAX_OFFSET_PER_KEYWORD, MAX_COMMENTS_PER_ANSWER,
+    MIN_ANSWER_LENGTH,
 )
 from crawler.utils import (
-    logger, AdaptiveRateLimiter, BilibiliWBI,
+    logger, AdaptiveRateLimiter, ZhihuZSE,
     net_error_counter,
-    parse_duration, is_ad_title, is_in_time_range,
+    is_ad_title, is_in_time_range,
     safe_get, strip_html,
 )
 
 
-class BilibiliAPI:
-    """封装B站公开API，管理Session、WBI签名和限速。"""
+class ZhihuAPI:
+    """封装知乎公开API，管理Session、ZSE签名和限速。"""
 
     def __init__(self, rate_limiter: AdaptiveRateLimiter):
         self.limiter = rate_limiter
@@ -35,75 +36,87 @@ class BilibiliAPI:
         self.session.headers.update(HEADERS)
         self.session.timeout = 30
 
-        # 用户信息缓存：mid -> {name, follower, ...}
-        self._user_cache: dict[int, dict] = {}
+        # 用户信息缓存：url_token -> {name, follower, ...}
+        self._user_cache: dict[str, dict] = {}
 
-        # Step 1: 先访问B站首页获取必要cookies（buvid3, b_nut）
+        # Step 1: 访问知乎首页获取必需cookies（d_c0）
         self._init_cookies()
 
-        # Step 2: 初始化 WBI 签名器（使用已有cookies的session）
-        self.wbi = BilibiliWBI(self.session)
-        try:
-            self.wbi.get_wbi_keys()
-            logger.debug("WBI密钥初始化成功")
-        except Exception as e:
-            logger.warning(f"WBI密钥初始化失败（将继续尝试）: {e}")
+        # Step 2: 初始化 ZSE 签名器
+        self.zse = ZhihuZSE(self.session)
+        logger.debug("知乎API模块初始化完成")
 
     def _init_cookies(self) -> None:
-        """访问B站首页获取buvid3等必需cookies。"""
+        """访问知乎首页获取 d_c0 等必需cookies。"""
         try:
             resp = self.session.get(
-                "https://www.bilibili.com/",
+                "https://www.zhihu.com/",
                 timeout=20,
             )
-            logger.debug(
-                f"首页cookies: {dict(self.session.cookies.get_dict())}"
-            )
+            cookies = dict(self.session.cookies.get_dict())
+            logger.debug(f"知乎首页cookies: {cookies}")
+            if "d_c0" not in cookies:
+                # 手动设置 d_c0
+                d_c0 = str(uuid.uuid4()).replace("-", "")[:32]
+                self.session.cookies.set("d_c0", d_c0, domain=".zhihu.com")
+                logger.debug(f"手动设置 d_c0: {d_c0}")
         except Exception as e:
-            logger.warning(f"获取首页cookies失败: {e}")
-
-    @staticmethod
-    def _generate_buvid3() -> str:
-        """生成随机 buvid3 cookie。"""
-        prefix = str(uuid.uuid4()).replace("-", "")
-        return f"{prefix[:8]}-{prefix[8:12]}-{prefix[12:16]}-{prefix[16:20]}-{prefix[20:32]}infoc"
+            logger.warning(f"获取知乎首页cookies失败: {e}")
+            # 即使首页失败也设置基本cookie
+            d_c0 = str(uuid.uuid4()).replace("-", "")[:32]
+            self.session.cookies.set("d_c0", d_c0, domain=".zhihu.com")
 
     # ═══════════════════════════════════════════════════
-    # 通用请求方法（带WBI签名）
+    # 通用请求方法
     # ═══════════════════════════════════════════════════
 
-    def _signed_get(self, url: str, params: dict) -> Optional[requests.Response]:
+    def _api_get(
+        self, url: str, params: dict | None = None,
+        needs_zse: bool = False,
+    ) -> Optional[requests.Response]:
         """
-        发送带WBI签名的GET请求。
-        返回 Response 对象或 None（失败时）。
+        发送 API GET 请求。
+
+        Args:
+            url: API URL
+            params: 查询参数字典
+            needs_zse: 是否需要添加 x-zse-96 header（搜索端点建议启用）
+
+        Returns:
+            Response 对象或 None（失败时）
         """
         self.limiter.wait()
 
-        # 临时切换Accept头为JSON（保留其他headers包括Sec-Fetch-*）
-        old_accept = self.session.headers.get("Accept", "")
-        self.session.headers["Accept"] = "application/json, text/plain, */*"
+        if params is None:
+            params = {}
+
+        # 设置 API 专用 headers
+        for key, value in API_HEADERS.items():
+            self.session.headers[key] = value
+
+        # 添加 x-zse-96 如果需要
+        if needs_zse:
+            try:
+                zse_value = self.zse.generate(url, params)
+                self.session.headers["x-zse-96"] = zse_value
+            except Exception as e:
+                logger.debug(f"ZSE签名生成失败: {e}")
 
         try:
-            signed_params = self.wbi.enc_wbi(params)
-        except Exception as e:
-            logger.debug(f"WBI签名失败: {e}")
-            signed_params = params
-
-        try:
-            resp = self.session.get(url, params=signed_params)
+            resp = self.session.get(url, params=params)
         except requests.RequestException as e:
             net_error_counter.record_error()
             logger.debug(f"请求失败 [{url}]: {type(e).__name__}")
-            resp = None
-        finally:
-            self.session.headers["Accept"] = old_accept
+            return None
 
         return resp
 
-    def _check_response(self, resp: requests.Response, context: str = "") -> bool:
+    def _check_response(
+        self, resp: Optional[requests.Response], context: str = ""
+    ) -> bool:
         """
-        检查API响应是否成功。
-        处理 429、-412（签名失效）、-1200（降级过滤）等错误。
+        检查 API 响应是否成功。
+        处理 429（限速）、403（被拦截）、5xx 等错误。
         返回 True 表示成功。
         """
         if resp is None:
@@ -112,6 +125,14 @@ class BilibiliAPI:
         if resp.status_code == 429:
             self.limiter.report_429()
             logger.debug(f"HTTP 429 [{context}]")
+            return False
+
+        if resp.status_code == 403:
+            self.limiter.report_429()
+            logger.warning(
+                f"HTTP 403 被拦截 [{context}]，"
+                f"可能需要更新 cookie 或 x-zse-96 签名"
+            )
             return False
 
         if resp.status_code != 200:
@@ -126,257 +147,291 @@ class BilibiliAPI:
             body = resp.json()
         except ValueError:
             net_error_counter.record_error()
+            logger.debug(f"响应非JSON [{context}]")
             return False
 
-        code = body.get("code", -1)
-
-        # -412: 被拦截（签名无效或cookie问题）
-        if code == -412:
-            self.limiter.report_429()
-            logger.debug(f"API -412 被拦截 [{context}]: {body.get('message', '')}")
-            # 尝试刷新WBI密钥
-            try:
-                self.wbi.get_wbi_keys()
-            except Exception:
-                pass
-            return False
-
-        # -1200: 降级过滤的请求
-        if code == -1200:
-            self.limiter.report_429()
-            logger.warning(f"API -1200 降级过滤 [{context}]，可能需要刷新WBI密钥或Cookie")
-            try:
-                self.wbi.get_wbi_keys()
-            except Exception:
-                pass
-            return False
-
-        # -799: 频率限制
-        if code == -799:
-            self.limiter.report_429()
-            logger.debug(f"API -799 频率限制 [{context}]")
-            return False
-
-        if code != 0:
-            # 62002: 视频不可见, -404: 不存在
-            if code in (62002, -404):
-                logger.debug(f"资源不可用 [{context}] code={code}")
-            else:
-                logger.debug(f"API code={code} [{context}]: "
-                             f"{body.get('message', '')}")
-            return False
+        # 知乎 API 错误检查
+        error = body.get("error")
+        if error:
+            error_code = error.get("code", 0)
+            error_msg = error.get("message", "")
+            if error_code in (403001, 403002):  # 频率限制
+                self.limiter.report_429()
+                logger.debug(f"知乎频率限制 [{context}]: {error_msg}")
+                return False
+            if error_code != 0:
+                logger.debug(f"知乎 API 错误 [{context}] code={error_code}: {error_msg}")
+                return False
 
         self.limiter.report_success()
         net_error_counter.record_success()
         return True
 
     # ═══════════════════════════════════════════════════
-    # 搜索API
+    # 搜索 API
     # ═══════════════════════════════════════════════════
 
-    def search_videos(
-        self, keyword: str, page: int, page_size: int = SEARCH_PAGE_SIZE,
-        order: str = "pubdate",
+    def search_content(
+        self, keyword: str, offset: int = 0, limit: int = SEARCH_LIMIT
     ) -> Optional[dict]:
         """
-        搜索视频，返回API原始响应（data字段）。
-        order: pubdate(最新), click(最多播放), dm(最多弹幕), stow(最多收藏)
+        搜索知乎内容，返回 API 原始响应。
+
+        Args:
+            keyword: 搜索关键词
+            offset: 分页偏移量（0, 20, 40, ...）
+            limit: 每页数量（默认20）
+
+        Returns:
+            API 响应的 data 字段，或 None
         """
         params = {
-            "search_type": "video",
-            "keyword": keyword,
-            "page": page,
-            "page_size": page_size,
-            "order": order,
+            "q": keyword,
+            "t": SEARCH_TYPE,
+            "lc_idx": "0",
+            "offset": str(offset),
+            "limit": str(limit),
         }
 
-        resp = self._signed_get(API_SEARCH, params)
-        if not self._check_response(resp, f"搜索 {keyword} p{page} order={order}"):
+        resp = self._api_get(
+            API_SEARCH, params,
+            needs_zse=True,  # 搜索端点严格要求 x-zse-96
+        )
+        if not self._check_response(resp, f"搜索 {keyword} offset={offset}"):
             return None
 
-        return resp.json().get("data")
+        return resp.json()
 
     def search_and_filter(
-        self, keyword: str, page: int, order: str = "pubdate"
+        self, keyword: str, offset: int = 0
     ) -> list[dict]:
         """
-        搜索一页并做预筛选，返回通过初筛的视频摘要列表。
-        预筛选：时间范围、广告标题、时长（播放量过滤移到详情阶段）
+        搜索一页并做预筛选，返回通过初筛的回答摘要列表。
+        预筛选：时间范围、广告标题、内容长度。
         """
-        data = self.search_videos(keyword, page, order=order)
+        data = self.search_content(keyword, offset)
         if data is None:
             return []
 
-        results = data.get("result", [])
+        results = data.get("data", [])
         if not results:
             return []
 
         filtered = []
         for item in results:
-            if item.get("type") != "video":
+            obj = item.get("object", {})
+            if not obj:
                 continue
 
-            bvid = item.get("bvid", "")
-            if not bvid:
+            # 只收集 answer 类型
+            obj_type = obj.get("type", "")
+            if obj_type != "answer":
                 continue
 
-            title = strip_html(item.get("title", ""))
-            play = item.get("play", 0)
-            pubdate_ts = item.get("pubdate", 0)
-            duration_str = item.get("duration", "0:00")
-
-            # 注意：搜索API返回的play字段可能不准确（尤其对新视频显示0）
-            # 播放量过滤移到获取视频详情之后（使用准确的stat.view）
-            if not is_in_time_range(pubdate_ts):
-                continue
-            if is_ad_title(title):
+            answer_id = obj.get("id", 0)
+            if not answer_id:
                 continue
 
-            duration_sec = parse_duration(duration_str)
-            if duration_sec is not None and duration_sec < MIN_DURATION_SEC:
+            # 时间筛选
+            created_time = obj.get("created_time", 0)
+            if not is_in_time_range(created_time):
                 continue
+
+            # 内容长度筛选
+            excerpt = strip_html(obj.get("excerpt", ""))
+            if len(excerpt) < MIN_ANSWER_LENGTH:
+                continue
+
+            question = obj.get("question", {})
+            author = obj.get("author", {})
 
             filtered.append({
-                "bvid": bvid,
-                "aid": item.get("id", 0),
-                "title": title,
-                "description": strip_html(item.get("description", "")),
-                "play": play,
-                "pubdate": pubdate_ts,
-                "author": item.get("author", ""),
-                "mid": item.get("mid", 0),
-                "tag": item.get("tag", ""),
-                "duration_str": duration_str,
-                "duration_sec": duration_sec or 0,
-                "video_review": item.get("video_review", 0),
+                "answer_id": answer_id,
+                "question_id": question.get("id", 0),
+                "question_title": question.get("title", ""),
+                "excerpt": excerpt,
+                "voteup_count": obj.get("voteup_count", 0),
+                "comment_count": obj.get("comment_count", 0),
+                "created_time": created_time,
+                "author_name": author.get("name", ""),
+                "author_url_token": author.get("url_token", ""),
             })
 
         return filtered
 
     # ═══════════════════════════════════════════════════
-    # 视频详情API
+    # 回答详情 API
     # ═══════════════════════════════════════════════════
 
-    def get_video_info(self, bvid: str) -> Optional[dict]:
-        """获取视频详细信息。"""
-        params = {"bvid": bvid}
-        resp = self._signed_get(API_VIDEO_INFO, params)
+    def get_answer_detail(self, answer_id: int) -> Optional[dict]:
+        """获取回答详细信息。"""
+        url = f"{API_ANSWER}/{answer_id}"
+        resp = self._api_get(url, needs_zse=False)
 
-        if not self._check_response(resp, f"视频 {bvid}"):
+        if not self._check_response(resp, f"回答 {answer_id}"):
             return None
 
-        vdata = resp.json().get("data", {})
-        if not vdata:
-            return None
-
-        stat = vdata.get("stat", {})
-        owner = vdata.get("owner", {})
+        adata = resp.json()
+        question = adata.get("question", {})
+        author = adata.get("author", {})
 
         return {
-            "bvid": vdata.get("bvid", bvid),
-            "aid": vdata.get("aid", 0),
-            "title": vdata.get("title", ""),
-            "description": strip_html(vdata.get("desc", "")),
-            "publish_time": vdata.get("pubdate", 0),
-            "duration_sec": vdata.get("duration", 0),
-            "tags": "",
-            "tag_list": "",
-            "category_id": vdata.get("tid", 0),
-            "category_name": vdata.get("tname", ""),
-            "uploader_name": owner.get("name", ""),
-            "uploader_mid": owner.get("mid", 0),
-            "uploader_follower_count": 0,
-            "view_count": stat.get("view", 0),
-            "like_count": stat.get("like", 0),
-            "coin_count": stat.get("coin", 0),
-            "favorite_count": stat.get("favorite", 0),
-            "share_count": stat.get("share", 0),
-            "comment_count": stat.get("reply", 0),
-            "danmaku_count": stat.get("danmaku", 0),
+            "answer_id": adata.get("id", answer_id),
+            "question_id": question.get("id", 0),
+            "question_title": question.get("title", ""),
+            "content": strip_html(adata.get("content", "")),
+            "excerpt": adata.get("excerpt", ""),
+            "publish_time": adata.get("created_time", 0),
+            "created_time": adata.get("created_time", 0),
+            "updated_time": adata.get("updated_time", 0),
+            "author_name": author.get("name", ""),
+            "author_url_token": author.get("url_token", ""),
+            "author_headline": author.get("headline", ""),
+            "author_follower_count": author.get("follower_count", 0),
+            "voteup_count": adata.get("voteup_count", 0),
+            "comment_count": adata.get("comment_count", 0),
+            "view_count": adata.get("view_count", 0),
+            "favorite_count": adata.get("favorite_count", 0),
         }
 
     # ═══════════════════════════════════════════════════
-    # 评论API
+    # 问题下的回答列表
     # ═══════════════════════════════════════════════════
 
-    def get_video_comments(
-        self, oid: int, mode: int = 3
+    def get_question_answers(
+        self, qid: int, offset: int = 0, limit: int = 20,
+        sort_by: str = "default",
     ) -> list[dict]:
         """
-        获取视频热门评论（使用新版 reply/main API）。
-        oid=aid, type=1（视频）, mode=3（热度排序）/ mode=2（时间排序）。
-        返回评论列表。
+        获取问题下的回答列表。
+
+        Args:
+            qid: 问题ID
+            offset: 偏移量
+            limit: 每页数量
+            sort_by: 排序方式 (default / created_time)
+
+        Returns:
+            回答摘要列表
         """
+        url = f"{API_QUESTION}/{qid}/answers"
         params = {
-            "oid": oid,
-            "type": 1,
-            "mode": mode,
-            "next": 0,
+            "limit": str(limit),
+            "offset": str(offset),
+            "sort_by": sort_by,
         }
+        resp = self._api_get(url, params, needs_zse=False)
 
-        resp = self._signed_get(API_COMMENTS, params)
-        if not self._check_response(resp, f"评论 oid={oid}"):
+        if not self._check_response(resp, f"问题 {qid} 回答 offset={offset}"):
             return []
 
-        data = resp.json().get("data", {})
-        if not data:
-            return []
-
-        # 合并 top 评论和普通热评
-        replies = data.get("replies", [])
-        top_replies = data.get("top_replies", [])
-
-        all_replies = list(top_replies) + list(replies)
-
-        comments = []
-        for r in all_replies:
-            content = r.get("content", {})
-            text = content.get("message", "")
-            text = strip_html(text)
-
-            if not text or len(text) < 2:
+        data = resp.json().get("data", [])
+        answers = []
+        for item in data:
+            adata = item.get("target", item)  # 知乎有时包裹在 target 中
+            if not adata.get("id"):
                 continue
 
+            author = adata.get("author", {})
+            question = adata.get("question", {})
+
+            answers.append({
+                "answer_id": adata.get("id", 0),
+                "question_id": question.get("id", qid),
+                "question_title": question.get("title", ""),
+                "content": strip_html(adata.get("content", "")),
+                "excerpt": adata.get("excerpt", ""),
+                "publish_time": adata.get("created_time", 0),
+                "created_time": adata.get("created_time", 0),
+                "updated_time": adata.get("updated_time", 0),
+                "author_name": author.get("name", ""),
+                "author_url_token": author.get("url_token", ""),
+                "author_headline": author.get("headline", ""),
+                "author_follower_count": author.get("follower_count", 0),
+                "voteup_count": adata.get("voteup_count", 0),
+                "comment_count": adata.get("comment_count", 0),
+                "view_count": adata.get("view_count", 0),
+                "favorite_count": adata.get("favorite_count", 0),
+            })
+
+        return answers
+
+    # ═══════════════════════════════════════════════════
+    # 评论 API
+    # ═══════════════════════════════════════════════════
+
+    def get_answer_comments(
+        self, answer_id: int, limit: int = MAX_COMMENTS_PER_ANSWER
+    ) -> list[dict]:
+        """
+        获取回答的评论列表。
+
+        Args:
+            answer_id: 回答ID
+            limit: 最大评论数
+
+        Returns:
+            评论列表
+        """
+        # 知乎评论API: /api/v4/comments/{answer_id}/root_comments?order=normal
+        url = f"{API_COMMENTS}/{answer_id}/root_comments"
+        params = {
+            "order": "normal",
+            "limit": str(min(limit, 20)),
+            "offset": "0",
+        }
+        resp = self._api_get(url, params, needs_zse=False)
+
+        if not self._check_response(resp, f"评论 answer={answer_id}"):
+            return []
+
+        data = resp.json().get("data", [])
+        comments = []
+        for c in data:
+            content_text = strip_html(c.get("content", ""))
+            if not content_text or len(content_text) < 2:
+                continue
             comments.append({
-                "comment_id": r.get("rpid", 0),
-                "oid": oid,
-                "text": text,
-                "text_length": len(text),
-                "like_count": r.get("like", 0),
-                "reply_count": r.get("rcount", r.get("count", 0)),
-                "publish_time": r.get("ctime", 0),
-                "is_hot": 1 if r.get("attr", 0) & 2 else 0,  # attr bit 1 = hot
-                "parent_id": r.get("parent", 0),
+                "comment_id": c.get("id", 0),
+                "content": content_text,
+                "content_length": len(content_text),
+                "like_count": c.get("vote_count", 0),
+                "reply_count": c.get("reply_count", 0),
+                "publish_time": c.get("created_time", 0),
+                "parent_id": 0,  # root comment
             })
 
         return comments
 
     # ═══════════════════════════════════════════════════
-    # 用户信息API
+    # 用户信息 API
     # ═══════════════════════════════════════════════════
 
-    def get_user_info(self, mid: int) -> Optional[dict]:
-        """获取UP主粉丝数等信息。结果缓存。"""
-        if mid in self._user_cache:
-            return self._user_cache[mid]
+    def get_user_info(self, url_token: str) -> Optional[dict]:
+        """获取用户信息。结果缓存。"""
+        if not url_token:
+            return None
+        if url_token in self._user_cache:
+            return self._user_cache[url_token]
 
-        params = {"mid": mid}
-        resp = self._signed_get(API_USER_INFO, params)
+        url = f"{API_USER}/{url_token}"
+        resp = self._api_get(url, needs_zse=False)
 
-        if not self._check_response(resp, f"用户 mid={mid}"):
+        if not self._check_response(resp, f"用户 {url_token}"):
             return None
 
-        udata = resp.json().get("data", {})
+        udata = resp.json()
         info = {
-            "mid": udata.get("mid", mid),
+            "url_token": udata.get("url_token", url_token),
             "name": udata.get("name", ""),
-            "follower": udata.get("follower", 0),
+            "headline": udata.get("headline", ""),
+            "follower_count": udata.get("follower_count", 0),
         }
-        self._user_cache[mid] = info
+        self._user_cache[url_token] = info
         return info
 
-    def get_cached_user_follower(self, mid: int) -> int:
+    def get_cached_user_follower(self, url_token: str) -> int:
         """获取已缓存的粉丝数（不发起请求）。"""
-        if mid in self._user_cache:
-            return self._user_cache[mid].get("follower", 0)
+        if url_token in self._user_cache:
+            return self._user_cache[url_token].get("follower_count", 0)
         return 0

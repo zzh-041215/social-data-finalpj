@@ -9,6 +9,7 @@ import re
 import hashlib
 import urllib.parse
 import functools
+import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Callable, Any, Optional
@@ -20,7 +21,6 @@ from crawler.config import (
     RATE_LIMIT_BACKOFF_BASE, RATE_LIMIT_BACKOFF_MAX,
     MAX_RETRIES, NETWORK_PAUSE_SEC, MAX_CONSECUTIVE_NETWORK_ERRORS,
     LOG_DIR, AD_PATTERNS,
-    MIN_VIEW_COUNT, MIN_DURATION_SEC,
     PUBLISH_AFTER, PUBLISH_BEFORE,
 )
 
@@ -69,7 +69,7 @@ logger = logging.getLogger("crawler")
 
 class AdaptiveRateLimiter:
     """
-    自适应限速器：正常时使用短延迟（0.3-0.8s），收到429后指数退避。
+    自适应限速器：正常时使用短延迟，收到429后指数退避。
 
     用法：
         limiter = AdaptiveRateLimiter()
@@ -171,10 +171,6 @@ def retry_with_backoff(
 ):
     """
     装饰器：自动重试API调用，支持指数退避和网络中断检测。
-
-    对被装饰函数的要求：
-    - 返回 (success: bool, data: Any) 或直接返回 Response
-    - 抛出 requests.RequestException 会自动重试
     """
     def decorator(func: Callable) -> Callable:
         @functools.wraps(func)
@@ -184,28 +180,20 @@ def retry_with_backoff(
                 try:
                     result = func(*args, **kwargs)
 
-                    # 如果返回的是 requests.Response
                     if isinstance(result, requests.Response):
-                        if result.status_code == 429 or (
-                            hasattr(result, 'json') and callable(result.json)
-                        ):
-                            try:
-                                body = result.json()
-                                if body.get("code") == -412:
-                                    net_error_counter.record_error()
-                                    if attempt < max_retries:
-                                        delay = min(
-                                            base_delay * (2 ** attempt),
-                                            max_delay
-                                        )
-                                        logger.debug(
-                                            f"HTTP 429, 第{attempt+1}次重试, "
-                                            f"等待{delay:.1f}s"
-                                        )
-                                        time.sleep(delay)
-                                        continue
-                            except Exception:
-                                pass
+                        if result.status_code == 429:
+                            net_error_counter.record_error()
+                            if attempt < max_retries:
+                                delay = min(
+                                    base_delay * (2 ** attempt),
+                                    max_delay
+                                )
+                                logger.debug(
+                                    f"HTTP 429, 第{attempt+1}次重试, "
+                                    f"等待{delay:.1f}s"
+                                )
+                                time.sleep(delay)
+                                continue
                         if result.status_code >= 500:
                             net_error_counter.record_error()
                             if attempt < max_retries:
@@ -215,7 +203,6 @@ def retry_with_backoff(
                         net_error_counter.record_success()
                         return result
 
-                    # 如果返回的是 tuple (success, data)
                     if isinstance(result, tuple) and len(result) == 2:
                         success, data = result
                         if success:
@@ -246,11 +233,9 @@ def retry_with_backoff(
                         logger.error(f"请求最终失败 [{type(e).__name__}]: {e}")
 
                 except Exception as e:
-                    # 非网络错误不重试
                     logger.error(f"非网络错误: {type(e).__name__}: {e}")
                     raise
 
-            # 所有重试都失败了
             logger.debug(f"请求经{max_retries}次重试后仍失败")
             return None
 
@@ -273,26 +258,8 @@ def parse_timestamp(ts: int | float | None) -> str | None:
         return None
 
 
-def parse_duration(duration_str: str | None) -> int | None:
-    """
-    将B站时长格式转为秒数。
-    支持格式："12:34" → 754, "01:02:03" → 3723
-    """
-    if not duration_str or duration_str == "--":
-        return None
-    parts = duration_str.strip().split(":")
-    try:
-        if len(parts) == 2:   # mm:ss
-            return int(parts[0]) * 60 + int(parts[1])
-        elif len(parts) == 3: # hh:mm:ss
-            return int(parts[0]) * 3600 + int(parts[1]) * 60 + int(parts[2])
-    except (ValueError, IndexError):
-        pass
-    return None
-
-
 def is_ad_title(title: str) -> bool:
-    """检查标题是否匹配广告/营销关键词。"""
+    """检查文本是否匹配广告/营销关键词。"""
     for pattern in AD_PATTERNS:
         if re.search(pattern, title):
             return True
@@ -302,11 +269,10 @@ def is_ad_title(title: str) -> bool:
 def is_in_time_range(pubdate_ts: int | None) -> bool:
     """
     检查发布时间是否在 2020-01-01 ~ 2025-12-31 (UTC) 之间。
-    B站API返回Unix UTC时间戳。
+    知乎 API 返回 Unix UTC 时间戳。
     """
     if pubdate_ts is None or pubdate_ts == 0:
         return True  # 无法判断则不筛
-    # 使用显式UTC时间戳
     # 2020-01-01 00:00:00 UTC = 1577836800
     # 2025-12-31 23:59:59 UTC = 1767225599
     AFTER_TS = 1577836800
@@ -315,13 +281,15 @@ def is_in_time_range(pubdate_ts: int | None) -> bool:
 
 
 def strip_html(text: str) -> str:
-    """去除HTML标签和B站emoji标记。"""
+    """去除HTML标签和其他标记。"""
     if not text:
         return ""
     # 去除HTML标签
     text = re.sub(r"<[^>]+>", "", text)
-    # 去除B站表情标记 [xxx]
+    # 去除知乎特殊标记
     text = re.sub(r"\[.*?\]", "", text)
+    # 去除多余空白
+    text = re.sub(r"\s+", " ", text)
     return text.strip()
 
 
@@ -336,7 +304,7 @@ def safe_get(d: dict, *keys, default=None) -> Any:
 
 
 def format_number(n: int) -> str:
-    """人性化数字显示：50000 → 5.0w, 1000000 → 100w。"""
+    """人性化数字显示：50000 → 5.0w, 1000 → 1.0k。"""
     if n is None:
         return "?"
     if n >= 10000:
@@ -347,117 +315,125 @@ def format_number(n: int) -> str:
 
 
 # ============================================================
-# WBI 签名（B站 API 反爬机制，自2023年起强制要求）
+# 知乎 ZSE-96 签名（知乎 API 反爬机制）
 # ============================================================
 
-class BilibiliWBI:
-    """
-    B站 WBI 签名生成器。
+# x-zse-96 编码表（版本 3.0.40，社区逆向工程）
+# 每个条目为3字符，共256条
+_ZSE_ENC_TABLE_RAW = (
+    "A4UsDdR0DJ4NR0M0z4L3l4u09uEl42Z42J4mQkt4uT4uW4sS4kU"
+    "4uX4uY4s24u14wW4zE4K0D4HY4uZ4sR4uz4u34s74u54u64s84u9"
+    "4sW4u04uE4uF4uG4uH4uI4uJ4uN4uO4uP4uQ4uV4u44ug4uw4u"
+    "A4uB4uC4sH4sI4sJ4sK4uo4up4uq4ur4us4ut4uu4uv4sL4sM4s"
+    "N4sO4sP4sQ4sT4rY4rv4rw4rx4ry4rz4rA4rB4rC4sU4sV4sX4"
+    "sY4sZ4s04s14s34s44s54s64s94sa4sb4sc4sd4se4sf4sg4sh4"
+    "si4sj4sk4sl4sm4sn4so4sp4sq4sr4ss4st4su4sv4sw4sx4sy"
+    "4sz4sA4sB4sC4sD4sE4sF4sG4rj4rk4rl4rm4rn4ro4rp4rq4r"
+    "r4rs4rt4ru4rR4rS4rT4rU4rV4rW4rX4rf4rg4rh4ri4sS4rZ4"
+    "r04r14r24r34r44r54r64r74r84r94ra4rb4rc4rd4re4u84ta4"
+    "tb4tc4td4te4tf4tg4th4ti4tj4tk4tl4tm4tn4to4tp4tq4tr"
+    "4ts4tt4tu4tv4tw4u14u24u64u74rD4rE4rF4rG4rH4rI4rJ4r"
+    "K4rL4rM4rN4rO4rP4rQ4tx4ty4tz4tA4tB4tC4tD4tE4tF4tG"
+    "4tH4tI4tJ4tK4tL4tM4tN4tO4tP4tQ4tR4tS4tT4tU4tV4tW4"
+    "tX4tY4tZ4t04t14t24t34t44t54t64t74rx4ry4rz4rA4rB4rC"
+)
+# 将原始表拆分为3字符组
+_ZSE_ENC_TABLE = [
+    _ZSE_ENC_TABLE_RAW[i:i+3]
+    for i in range(0, len(_ZSE_ENC_TABLE_RAW), 3)
+]
 
-    为API请求参数计算 w_rid 和 wts，绕过 -1200 降级过滤。
-    密钥每日轮换，首次调用时从 /x/web-interface/nav 获取。
-    """
 
-    # 固定64位索引排列表（自2023年引入后至今未变）
-    MIXIN_KEY_ENC_TAB = [
-        46, 47, 18, 2, 53, 8, 23, 32, 15, 50, 10, 31, 58, 3, 45, 35,
-        27, 43, 5, 49, 33, 9, 42, 19, 29, 28, 14, 39, 12, 38, 41, 13,
-        37, 48, 7, 16, 24, 55, 40, 61, 26, 17, 0, 1, 60, 51, 30, 4,
-        22, 25, 54, 21, 56, 59, 6, 63, 57, 62, 11, 36, 20, 34, 44, 52,
-    ]
+def _zse_encode(text: str) -> str:
+    """将字符串编码为 x-zse-96 所用格式（使用3字符组编码表）。"""
+    result = []
+    table_len = len(_ZSE_ENC_TABLE)
+    for ch in text:
+        idx = ord(ch) % table_len
+        result.append(_ZSE_ENC_TABLE[idx])
+    return "".join(result)
+
+
+class ZhihuZSE:
+    """
+    知乎 x-zse-96 签名生成器。
+
+    为 API 请求（尤其是 /api/v4/search_v3）生成必需的 x-zse-96 header。
+    基于社区逆向工程成果实现，版本 3.0.40。
+
+    算法概要:
+    1. 构建源字符串: URL path + query
+    2. MD5 源字符串 → hex digest
+    3. 拼接: md5_hex + d_c0 cookie
+    4. 使用3字符组编码表逐个字符替换
+    5. 输出: "2.0_{encoded}"
+
+    用法:
+        zse = ZhihuZSE(session)
+        zse_96 = zse.generate("https://www.zhihu.com/api/v4/search_v3", params)
+        headers["x-zse-96"] = zse_96
+    """
 
     def __init__(self, session: Optional[requests.Session] = None):
-        self.img_key: Optional[str] = None
-        self.sub_key: Optional[str] = None
-        self.mixin_key: Optional[str] = None
-        self._keys_ts: float = 0.0  # 密钥获取时间
         self._session = session or requests.Session()
+        self._d_c0: str = ""
 
-    def get_wbi_keys(self) -> tuple[str, str]:
+    def _get_d_c0(self) -> str:
+        """从 session cookies 获取或生成 d_c0。"""
+        if self._d_c0:
+            return self._d_c0
+        for cookie in self._session.cookies:
+            if cookie.name == "d_c0":
+                self._d_c0 = cookie.value
+                return self._d_c0
+        # 生成新的 d_c0
+        self._d_c0 = str(uuid.uuid4()).replace("-", "")[:32]
+        return self._d_c0
+
+    def generate(self, url: str, params: dict | None = None) -> str:
         """
-        从 /x/web-interface/nav 获取 img_key 和 sub_key。
-        密钥每日轮换，缓存12小时。
-        """
-        now = time.time()
-        # 缓存12小时（43200秒）
-        if (self.mixin_key is not None
-                and (now - self._keys_ts) < 43200):
-            return self.img_key, self.sub_key
-
-        try:
-            resp = self._session.get(
-                "https://api.bilibili.com/x/web-interface/nav",
-                timeout=15,
-            )
-            data = resp.json()
-
-            # code=-101 表示未登录，但仍返回wbi_img数据
-            # 任何code都可以包含wbi_img，先检查数据是否存在
-            wbi_img = safe_get(data, "data", "wbi_img")
-            if not wbi_img:
-                raise RuntimeError(
-                    f"获取WBI密钥失败: code={data.get('code')}, "
-                    f"message={data.get('message', '')}"
-                )
-
-            logger.debug(f"WBI密钥获取成功 (nav code={data.get('code')})")
-            self.img_key = wbi_img["img_url"].split("/")[-1].split(".")[0]
-            self.sub_key = wbi_img["sub_url"].split("/")[-1].split(".")[0]
-            self._keys_ts = now
-
-            # 生成 mixin key
-            raw_key = self.img_key + self.sub_key
-            self.mixin_key = "".join([
-                raw_key[i]
-                for i in self.MIXIN_KEY_ENC_TAB
-                if i < len(raw_key)
-            ])[:32]
-
-            logger.debug(f"WBI密钥已更新: mixin_key={self.mixin_key[:8]}...")
-            return self.img_key, self.sub_key
-
-        except Exception as e:
-            logger.error(f"获取WBI密钥异常: {e}")
-            raise
-
-    def enc_wbi(self, params: dict) -> dict:
-        """
-        为请求参数计算 WBI 签名，返回附加了 w_rid 和 wts 的参数字典。
+        生成 x-zse-96 header 值。
 
         Args:
-            params: 原始请求参数字典
+            url: 完整 API URL
+            params: 查询参数字典（可选）
 
         Returns:
-            附加了 w_rid, wts 的新参数字典
+            x-zse-96 字符串，格式: "2.0_{signature}"
         """
-        if not self.mixin_key:
-            self.get_wbi_keys()
+        from urllib.parse import urlparse
 
-        # 1. 添加时间戳
-        signed_params = params.copy()
-        wts = int(time.time())
-        signed_params["wts"] = wts
+        parsed = urlparse(url)
+        source_path = parsed.path
 
-        # 2. 按 key 字母序排序
-        sorted_params = dict(sorted(signed_params.items(), key=lambda x: x[0]))
+        # 构建 source 字符串：path + ? + sorted_query
+        if params:
+            sorted_params = sorted(params.items(), key=lambda x: x[0])
+            query_str = urllib.parse.urlencode(sorted_params)
+            source = source_path + "?" + query_str
+        elif parsed.query:
+            # 如果URL已包含query但params为空，对query排序
+            query_pairs = urllib.parse.parse_qsl(parsed.query, keep_blank_values=True)
+            sorted_pairs = sorted(query_pairs, key=lambda x: x[0])
+            query_str = urllib.parse.urlencode(sorted_pairs)
+            source = source_path + "?" + query_str
+        else:
+            source = source_path
 
-        # 3. 过滤特殊字符 !'()*
-        filtered = {}
-        for k, v in sorted_params.items():
-            val_str = str(v)
-            for ch in "!'()*":
-                val_str = val_str.replace(ch, "")
-            filtered[k] = val_str
+        # Step 1: MD5 source → hex digest (32 chars)
+        md5_digest = hashlib.md5(source.encode("utf-8")).hexdigest()
 
-        # 4. URL编码
-        query_string = urllib.parse.urlencode(filtered)
+        # Step 2: 拼接 d_c0
+        combined = md5_digest + self._get_d_c0()
 
-        # 5. 拼接 mixin_key 并计算 MD5
-        sign_str = query_string + self.mixin_key
-        w_rid = hashlib.md5(sign_str.encode("utf-8")).hexdigest()
+        # Step 3: 使用 ZSE 编码表编码（每个字符映射到3字符组）
+        encoded = _zse_encode(combined)
 
-        # 6. 追加签名
-        result = params.copy()
-        result["w_rid"] = w_rid
-        result["wts"] = str(wts)
-        return result
+        return f"2.0_{encoded}"
+
+    def generate_from_path(self, path: str) -> str:
+        """从纯路径生成 x-zse-96（用于无查询参数的请求）。"""
+        md5_digest = hashlib.md5(path.encode("utf-8")).hexdigest()
+        combined = md5_digest + self._get_d_c0()
+        encoded = _zse_encode(combined)
+        return f"2.0_{encoded}"

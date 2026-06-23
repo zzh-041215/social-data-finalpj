@@ -1,5 +1,5 @@
 """
-存储模块：CSV追加写入、高频checkpoint、已爬bvids管理、进度日志
+存储模块：CSV追加写入、高频checkpoint、已爬answer_ids管理、进度日志
 """
 
 import json
@@ -13,9 +13,9 @@ import pandas as pd
 
 from crawler.config import (
     RAW_DIR, CHECKPOINT_DIR, LOG_DIR,
-    VIDEOS_CSV, COMMENTS_CSV,
-    CHECKPOINT_STATE, CHECKPOINT_BVIDS,
-    VIDEO_COLUMNS, COMMENT_COLUMNS,
+    ANSWERS_CSV, COMMENTS_CSV,
+    CHECKPOINT_STATE, CHECKPOINT_ANSWER_IDS,
+    ANSWER_COLUMNS, COMMENT_COLUMNS,
     SEARCH_WORKERS,
 )
 from crawler.utils import logger
@@ -33,20 +33,20 @@ class DataStorage:
         for d in [RAW_DIR, CHECKPOINT_DIR, LOG_DIR]:
             os.makedirs(d, exist_ok=True)
 
-        self.videos_path = VIDEOS_CSV
+        self.answers_path = ANSWERS_CSV
         self.comments_path = COMMENTS_CSV
-        self.bvids_path = CHECKPOINT_BVIDS
+        self.answer_ids_path = CHECKPOINT_ANSWER_IDS
 
-    # ── 视频CSV ──
+    # ── 回答CSV ──
 
-    def save_videos(self, rows: list[dict]) -> None:
-        """追加视频行到CSV（首次写入含表头）。"""
+    def save_answers(self, rows: list[dict]) -> None:
+        """追加回答行到CSV（首次写入含表头）。"""
         if not rows:
             return
-        df = pd.DataFrame(rows, columns=VIDEO_COLUMNS)
-        file_exists = os.path.exists(self.videos_path)
+        df = pd.DataFrame(rows, columns=ANSWER_COLUMNS)
+        file_exists = os.path.exists(self.answers_path)
         df.to_csv(
-            self.videos_path,
+            self.answers_path,
             mode="a",
             header=not file_exists,
             index=False,
@@ -67,29 +67,29 @@ class DataStorage:
             encoding="utf-8-sig",
         )
 
-    # ── 已爬bvids管理 ──
+    # ── 已爬answer_ids管理 ──
 
-    def load_crawled_bvids(self) -> set[str]:
-        """从 crawled_bvids.txt 重建已爬集合。"""
-        if not os.path.exists(self.bvids_path):
+    def load_crawled_answer_ids(self) -> set[str]:
+        """从 crawled_answer_ids.txt 重建已爬集合。"""
+        if not os.path.exists(self.answer_ids_path):
             return set()
-        with open(self.bvids_path, "r", encoding="utf-8") as f:
-            bvids = {line.strip() for line in f if line.strip()}
-        logger.debug(f"从checkpoint恢复了 {len(bvids)} 个已爬bvid")
-        return bvids
+        with open(self.answer_ids_path, "r", encoding="utf-8") as f:
+            ids_set = {line.strip() for line in f if line.strip()}
+        logger.debug(f"从checkpoint恢复了 {len(ids_set)} 个已爬answer_id")
+        return ids_set
 
-    def append_bvids(self, bvids: list[str]) -> None:
-        """追加新bvid到checkpoint文件。"""
-        with open(self.bvids_path, "a", encoding="utf-8") as f:
-            for bvid in bvids:
-                f.write(f"{bvid}\n")
+    def append_answer_ids(self, ids_list: list[int]) -> None:
+        """追加新answer_id到checkpoint文件。"""
+        with open(self.answer_ids_path, "a", encoding="utf-8") as f:
+            for aid in ids_list:
+                f.write(f"{aid}\n")
 
-    def get_bvid_count(self) -> int:
-        """快速统计已爬bvid数量（不加载全部到内存）。"""
-        if not os.path.exists(self.bvids_path):
+    def get_answer_id_count(self) -> int:
+        """快速统计已爬answer_id数量（不加载全部到内存）。"""
+        if not os.path.exists(self.answer_ids_path):
             return 0
         count = 0
-        with open(self.bvids_path, "r", encoding="utf-8") as f:
+        with open(self.answer_ids_path, "r", encoding="utf-8") as f:
             for _ in f:
                 count += 1
         return count
@@ -100,7 +100,7 @@ class DataStorage:
         self,
         keyword_progress: dict,
         stats: dict,
-        bvid_count: int,
+        answer_id_count: int,
     ) -> str:
         """保存运行状态到 state.json。"""
         state = {
@@ -108,7 +108,7 @@ class DataStorage:
             "keyword_progress": keyword_progress,
             "stats": stats,
             "last_successful_request": datetime.now().strftime("%Y-%m-%dT%H:%M:%S"),
-            "bvid_count": bvid_count,
+            "answer_id_count": answer_id_count,
         }
         with open(CHECKPOINT_STATE, "w", encoding="utf-8") as f:
             json.dump(state, f, ensure_ascii=False, indent=2)
@@ -127,12 +127,12 @@ class DataStorage:
 
     # ── 统计 ──
 
-    def get_video_count_from_csv(self) -> int:
-        """从CSV统计已有视频数（不加载全部数据）。"""
-        if not os.path.exists(self.videos_path):
+    def get_answer_count_from_csv(self) -> int:
+        """从CSV统计已有回答数（不加载全部数据）。"""
+        if not os.path.exists(self.answers_path):
             return 0
         try:
-            df = pd.read_csv(self.videos_path, usecols=["bvid"])
+            df = pd.read_csv(self.answers_path, usecols=["answer_id"])
             return len(df)
         except Exception:
             return 0
@@ -163,31 +163,32 @@ class ProgressLogger:
         self.errors = 0
         self.last_report_at = 0
 
-    def log_ok(self, bvid: str, keyword: str,
-               view_count: int, like_count: int) -> None:
+    def log_ok(self, answer_id: int, keyword: str,
+               voteup_count: int, comment_count: int) -> None:
+        """记录一条成功爬取的回答。"""
         self.crawled += 1
         total = self.crawled + self.skipped
-        view_str = f"{view_count/10000:.1f}w" if view_count else "?"
+        voteup_str = f"{voteup_count/10000:.1f}w" if voteup_count and voteup_count >= 10000 else str(voteup_count or "?")
         logger.info(
-            f"[{self.crawled}/{total}] {bvid} | {keyword} | "
-            f"播放{view_str} 赞{like_count or '?'} | OK"
+            f"[{self.crawled}/{total}] {answer_id} | {keyword} | "
+            f"赞同{voteup_str} 评论{comment_count or '?'} | OK"
         )
         self._maybe_report()
 
-    def log_skip(self, bvid: str, keyword: str, reason: str) -> None:
+    def log_skip(self, answer_id: int, keyword: str, reason: str) -> None:
         self.skipped += 1
         total = self.crawled + self.skipped
         logger.info(
-            f"[{self.crawled}/{total}] {bvid} | {keyword} | "
+            f"[{self.crawled}/{total}] {answer_id} | {keyword} | "
             f"SKIP({reason})"
         )
         self._maybe_report()
 
-    def log_error(self, bvid: str, keyword: str, error: str) -> None:
+    def log_error(self, answer_id: int, keyword: str, error: str) -> None:
         self.errors += 1
         total = self.crawled + self.skipped
         logger.warning(
-            f"[{self.crawled}/{total}] {bvid} | {keyword} | "
+            f"[{self.crawled}/{total}] {answer_id} | {keyword} | "
             f"ERROR: {error}"
         )
 
