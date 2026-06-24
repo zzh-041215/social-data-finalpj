@@ -49,7 +49,7 @@ def fig_emotion_dist(df: pd.DataFrame) -> None:
     ax1.set_title("四类情绪总体占比",fontsize=18)
     ax1.set_ylabel("占比",fontsize=16)
     for i, v in enumerate(overall.values):
-        ax1.text(i, v + 0.005, f"{v:.1%}", ha="center")
+        ax1.text(i, v + 0.005, f"{v:.1%}", ha="center",fontsize=14)
 
     # 分议题（堆叠）
     by_topic = (
@@ -64,7 +64,7 @@ def fig_emotion_dist(df: pd.DataFrame) -> None:
     ax2.set_title("分议题情绪占比",fontsize=18)
     ax2.set_ylabel("占比",fontsize=16)
     ax2.legend(loc="upper right", ncol=4, fontsize=8)
-    plt.setp(ax2.get_xticklabels(), rotation=15)
+    plt.setp(ax2.get_xticklabels(), rotation=15,fontsize=14)
 
     fig.tight_layout()
     path = os.path.join(FIGURES_DIR, "emotion_dist.png")
