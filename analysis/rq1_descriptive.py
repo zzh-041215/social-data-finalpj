@@ -46,8 +46,8 @@ def fig_emotion_dist(df: pd.DataFrame) -> None:
     # 总体
     overall = df["emotion"].value_counts(normalize=True).reindex(EMOTIONS).fillna(0)
     ax1.bar(overall.index, overall.values, color=[EMO_COLORS[e] for e in overall.index])
-    ax1.set_title("四类情绪总体占比")
-    ax1.set_ylabel("占比")
+    ax1.set_title("四类情绪总体占比",fontsize=18)
+    ax1.set_ylabel("占比",fontsize=16)
     for i, v in enumerate(overall.values):
         ax1.text(i, v + 0.005, f"{v:.1%}", ha="center")
 
@@ -61,8 +61,8 @@ def fig_emotion_dist(df: pd.DataFrame) -> None:
         ax2.bar(by_topic.index, by_topic[emo], bottom=bottom,
                 label=emo, color=EMO_COLORS[emo])
         bottom += by_topic[emo].values
-    ax2.set_title("分议题情绪占比")
-    ax2.set_ylabel("占比")
+    ax2.set_title("分议题情绪占比",fontsize=18)
+    ax2.set_ylabel("占比",fontsize=16)
     ax2.legend(loc="upper right", ncol=4, fontsize=8)
     plt.setp(ax2.get_xticklabels(), rotation=15)
 
@@ -90,23 +90,25 @@ def fig_emotion_trend(df: pd.DataFrame) -> pd.DataFrame:
     # 事件竖线
     for q, name in EVENTS.items():
         if q in quarters:
+            y_top = share.max().max()
             xi = quarters.index(q)
             ax.axvline(xi, color="black", ls="--", lw=0.8, alpha=0.5)
-            ax.text(xi, 0.92, name, rotation=0, fontsize=8, ha="center",
+            ax.text(xi, y_top+0.06, name, rotation=0, fontsize=14, ha="center",
                     va="top", color="black",
                     bbox=dict(boxstyle="round,pad=0.2", fc="white", ec="gray", alpha=0.8))
+            ax.set_ylim(0, y_top+0.15)
 
     ax.set_xticks(x)
-    ax.set_xticklabels(quarters, rotation=60, fontsize=8)
-    ax.set_ylabel("情绪类型占比")
-    ax.set_title("知乎人生规划话语：四类情绪的季度演化（2020Q1–2025Q4）")
+    ax.set_xticklabels(quarters, rotation=60, fontsize=12)
+    ax.set_ylabel("情绪类型占比",fontsize=16)
+    ax.set_title("知乎人生规划话语：四类情绪的季度演化（2020Q1–2025Q4）",fontsize=18)
     ax.legend(loc="upper left", ncol=4)
     ax.grid(alpha=0.3)
 
     # 副轴：每季度样本量（提示早期季度样本较少）
     ax2 = ax.twinx()
     ax2.bar(x, counts.values, alpha=0.12, color="steelblue")
-    ax2.set_ylabel("每季度回答数（浅蓝柱）", color="steelblue")
+    ax2.set_ylabel("每季度回答数（浅蓝柱）", color="steelblue",fontsize=16)
 
     fig.tight_layout()
     path = os.path.join(FIGURES_DIR, "emotion_trend.png")
@@ -139,20 +141,20 @@ def fig_marker_words(df: pd.DataFrame) -> None:
     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(13, 5), sharey=True)
     for w in RISING_WORDS:
         ax1.plot(years, yearly_rate(w), marker="o", ms=3, label=w)
-    ax1.set_title("上升组（解构/焦虑话语）")
-    ax1.set_xlabel("年份")
-    ax1.set_ylabel("含该词回答占比")
-    ax1.legend(fontsize=8)
+    ax1.set_title("上升组（解构/焦虑话语）",fontsize=18)
+    ax1.set_xlabel("年份",fontsize=16)
+    ax1.set_ylabel("含该词回答占比",fontsize=16)
+    ax1.legend(fontsize=14)
     ax1.grid(alpha=0.3)
 
     for w in FALLING_WORDS:
         ax2.plot(years, yearly_rate(w), marker="o", ms=3, label=w)
-    ax2.set_title("下降组（积极话语）")
-    ax2.set_xlabel("年份")
-    ax2.legend(fontsize=8)
+    ax2.set_title("下降组（积极话语）",fontsize=18)
+    ax2.set_xlabel("年份",fontsize=16)
+    ax2.legend(fontsize=14)
     ax2.grid(alpha=0.3)
 
-    fig.suptitle("标志性词汇的年度出现率变化")
+    fig.suptitle("标志性词汇的年度出现率变化",fontsize=16)
     fig.tight_layout()
     path = os.path.join(FIGURES_DIR, "marker_words.png")
     fig.savefig(path)
